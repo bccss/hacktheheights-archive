@@ -89,7 +89,7 @@ jobs:
             cp placeholder.html ${{ matrix.year }}/index.html
           fi
 
-      # Commit changes to repository with retry mechanism
+      # Commit changes to repository with improved retry mechanism
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -98,26 +98,45 @@ jobs:
           # Get current branch name
           BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
           
+          # Add changes for this year - do this first before any pull
+          git add ${{ matrix.year }}
+          
           # Try to commit and push with retries
           MAX_RETRIES=5
           RETRY_COUNT=0
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            # Pull latest changes to avoid conflicts
-            git pull origin $BRANCH_NAME --rebase
-            
-            # Add changes and commit
-            git add ${{ matrix.year }}
+            # Commit the changes
             git commit -m "Update content for year ${{ matrix.year }}" || echo "No changes to commit"
             
-            # Try to push
+            # Try to push directly first
             if git push; then
               echo "Successfully pushed changes!"
               break
             else
-              RETRY_COUNT=$((RETRY_COUNT+1))
-              echo "Push failed. Retry $RETRY_COUNT of $MAX_RETRIES..."
-              sleep 5
+              # If push fails, fetch origin and resolve conflicts
+              git fetch origin
+              git reset --soft HEAD~1  # Undo the commit but keep changes staged
+              git reset HEAD ${{ matrix.year }}  # Unstage changes
+              git checkout -- ${{ matrix.year }}  # Discard unstaged changes
+              git pull --no-rebase  # Pull without rebase
+              
+              # Re-add and recommit our changes
+              git add ${{ matrix.year }}
+              git commit -m "Update content for year ${{ matrix.year }} (retry $RETRY_COUNT)" || {
+                echo "No changes to commit after pull"
+                break
+              }
+              
+              # Try push again
+              if git push; then
+                echo "Successfully pushed changes on retry $RETRY_COUNT!"
+                break
+              else
+                RETRY_COUNT=$((RETRY_COUNT+1))
+                echo "Push failed. Retry $RETRY_COUNT of $MAX_RETRIES..."
+                sleep $((5 * RETRY_COUNT))  # Increasing backoff
+              fi
             fi
           done
           
