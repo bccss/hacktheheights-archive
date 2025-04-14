@@ -1,0 +1,84 @@
+name: Build & Deploy yearly sites
+
+on:
+  push:
+    branches: [main]            # re‑deploy when the workflow itself changes
+  workflow_dispatch:            # …or run by hand
+  schedule:
+    - cron: "0 6 * * SUN"       # …or every Sunday to catch late edits
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Local sites already in this repository (kept as-is)
+          - year: 2016
+            type: local
+          - year: 2017
+            type: local
+          - year: 2018
+            type: local
+          - year: 2019
+            type: local
+          # Remote sites in separate repositories
+          - year: 2021
+            type: static
+          - year: 2023
+            type: vite
+          - year: 2024
+            type: vite
+    steps:
+      - name: Checkout archive repo
+        uses: actions/checkout@v4
+        with:
+          path: archive
+
+      # Skip checkout for local years (already in archive repo)
+      - name: Checkout year ${{ matrix.year }}
+        if: matrix.type != 'local'
+        uses: actions/checkout@v4
+        with:
+          repository: bccss/hth${{ matrix.year }}
+          path: site
+
+      # Install Node.js only for sites that need building
+      - name: Set up Node.js
+        if: matrix.type == 'vite'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: site/package-lock.json
+
+      # Build for modern sites
+      - name: Install deps & build
+        if: matrix.type == 'vite'
+        working-directory: site
+        run: |
+          npm ci
+          npm run build         # outputs to site/dist (for Vite)
+
+      # Copy for static sites
+      - name: Copy static site
+        if: matrix.type == 'static'
+        run: |
+          rm -rf archive/${{ matrix.year }}
+          mkdir -p archive/${{ matrix.year }}
+          cp -r site/* archive/${{ matrix.year }}/
+
+      # Copy for modern sites
+      - name: Copy built site
+        if: matrix.type == 'vite'
+        run: |
+          rm -rf archive/${{ matrix.year }}
+          mkdir -p archive/${{ matrix.year }}
+          cp -r site/dist/* archive/${{ matrix.year }}/   # adjust path as needed
+
+      - name: Deploy to gh‑pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: archive          # everything inside this dir gets published
+          clean: false             # Keep existing files from local content

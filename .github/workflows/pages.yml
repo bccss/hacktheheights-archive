@@ -1,0 +1,53 @@
+name: Deploy Main Archive Page
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'index.html'
+      - 'README.md'
+      - 'CNAME'
+      - '.github/workflows/pages.yml'
+      - 'placeholder.html'
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      # Clone the gh-pages branch to ensure we don't overwrite year folders
+      - name: Clone gh-pages branch
+        run: |
+          git clone --branch gh-pages --single-branch https://github.com/${{ github.repository }}.git gh-pages-branch || mkdir -p gh-pages-branch
+      
+      # Copy main files to gh-pages
+      - name: Copy main files
+        run: |
+          cp index.html gh-pages-branch/
+          cp CNAME gh-pages-branch/
+          cp placeholder.html gh-pages-branch/
+          cp -r 2016 2017 2018 2019 gh-pages-branch/ 2>/dev/null || true
+      
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: gh-pages-branch
+          clean: false  # Don't wipe out other folders 
