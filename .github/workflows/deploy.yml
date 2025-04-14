@@ -2,7 +2,7 @@ name: Pull External Sites
 
 on:
   push:
-    branches: [main]            # re‑deploy when the workflow itself changes
+    branches: [master]            # re‑deploy when the workflow itself changes
   workflow_dispatch:            # …or run by hand
   schedule:
     - cron: "0 6 * * SUN"       # …or every Sunday to catch late edits
@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Checkout archive repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Get all history to avoid conflicts
 
       # Checkout external repository
       - name: Checkout year ${{ matrix.year }}
@@ -87,11 +89,39 @@ jobs:
             cp placeholder.html ${{ matrix.year }}/index.html
           fi
 
-      # Commit changes to repository
-      - name: Commit changes
+      # Commit changes to repository with retry mechanism
+      - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "GitHub Actions"
-          git add ${{ matrix.year }}
-          git commit -m "Update content for year ${{ matrix.year }}" || echo "No changes to commit"
-          git push
+          
+          # Get current branch name
+          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+          
+          # Try to commit and push with retries
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Pull latest changes to avoid conflicts
+            git pull origin $BRANCH_NAME --rebase
+            
+            # Add changes and commit
+            git add ${{ matrix.year }}
+            git commit -m "Update content for year ${{ matrix.year }}" || echo "No changes to commit"
+            
+            # Try to push
+            if git push; then
+              echo "Successfully pushed changes!"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT+1))
+              echo "Push failed. Retry $RETRY_COUNT of $MAX_RETRIES..."
+              sleep 5
+            fi
+          done
+          
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "Failed to push after $MAX_RETRIES attempts."
+            exit 1
+          fi
