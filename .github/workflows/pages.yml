@@ -1,15 +1,14 @@
-name: Deploy Main Archive Page
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: ["main"]
-    paths:
-      - 'index.html'
-      - 'README.md'
-      - 'CNAME'
-      - '.github/workflows/pages.yml'
-      - 'placeholder.html'
   workflow_dispatch:
+  # Run after external content is pulled
+  workflow_run:
+    workflows: ["Pull External Sites"]
+    types:
+      - completed
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -31,23 +30,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+          
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v4
       
-      # Clone the gh-pages branch to ensure we don't overwrite year folders
-      - name: Clone gh-pages branch
-        run: |
-          git clone --branch gh-pages --single-branch https://github.com/${{ github.repository }}.git gh-pages-branch || mkdir -p gh-pages-branch
-      
-      # Copy main files to gh-pages
-      - name: Copy main files
-        run: |
-          cp index.html gh-pages-branch/
-          cp CNAME gh-pages-branch/
-          cp placeholder.html gh-pages-branch/
-          cp -r 2016 2017 2018 2019 gh-pages-branch/ 2>/dev/null || true
-      
-      - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
+      # Create artifact for GitHub Pages (includes all content)
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          branch: gh-pages
-          folder: gh-pages-branch
-          clean: false  # Don't wipe out other folders 
+          path: .
+          
+      # Deploy to GitHub Pages  
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4 

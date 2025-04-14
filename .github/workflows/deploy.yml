@@ -1,4 +1,4 @@
-name: Build & Deploy yearly sites
+name: Pull External Sites
 
 on:
   push:
@@ -7,21 +7,16 @@ on:
   schedule:
     - cron: "0 6 * * SUN"       # …or every Sunday to catch late edits
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          # Local sites already in this repository (kept as-is)
-          - year: 2016
-            type: local
-          - year: 2017
-            type: local
-          - year: 2018
-            type: local
-          - year: 2019
-            type: local
           # Remote sites in separate repositories
           - year: 2021
             type: static
@@ -32,16 +27,13 @@ jobs:
     steps:
       - name: Checkout archive repo
         uses: actions/checkout@v4
-        with:
-          path: archive
 
-      # Skip checkout for local years (already in archive repo)
+      # Checkout external repository
       - name: Checkout year ${{ matrix.year }}
-        if: matrix.type != 'local'
         uses: actions/checkout@v4
         with:
           repository: bccss/hth${{ matrix.year }}
-          path: site
+          path: external-site
 
       # Install Node.js only for sites that need building
       - name: Set up Node.js
@@ -50,35 +42,35 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: external-site/package-lock.json
 
       # Build for modern sites
       - name: Install deps & build
         if: matrix.type == 'vite'
-        working-directory: site
+        working-directory: external-site
         run: |
           npm ci
-          npm run build         # outputs to site/dist (for Vite)
+          npm run build         # outputs to external-site/dist (for Vite)
 
-      # Copy for static sites
+      # Copy content to the year directory
       - name: Copy static site
         if: matrix.type == 'static'
         run: |
-          rm -rf archive/${{ matrix.year }}
-          mkdir -p archive/${{ matrix.year }}
-          cp -r site/* archive/${{ matrix.year }}/
+          mkdir -p ${{ matrix.year }}
+          cp -r external-site/* ${{ matrix.year }}/
 
-      # Copy for modern sites
+      # Copy for modern sites 
       - name: Copy built site
         if: matrix.type == 'vite'
         run: |
-          rm -rf archive/${{ matrix.year }}
-          mkdir -p archive/${{ matrix.year }}
-          cp -r site/dist/* archive/${{ matrix.year }}/   # adjust path as needed
+          mkdir -p ${{ matrix.year }}
+          cp -r external-site/dist/* ${{ matrix.year }}/
 
-      - name: Deploy to gh‑pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: archive          # everything inside this dir gets published
-          clean: false             # Keep existing files from local content
+      # Commit changes to repository
+      - name: Commit changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "GitHub Actions"
+          git add ${{ matrix.year }}
+          git commit -m "Update content for year ${{ matrix.year }}" || echo "No changes to commit"
+          git push
